@@ -27,8 +27,8 @@ jobs:
           brew install xcodegen zstd glslang
           brew install --cask dotnet-sdk
           python3 -m pip install lz4 "capstone>=5,<6" fonttools nsz zbic "backports.zstd; python_version < '3.14'" --break-system-packages
-          # gdown 대신 gdrive-downloader 라이브러리 사용
-          python3 -m pip install gdrive-downloader --break-system-packages
+          # gdown 호환성 문제 해결을 위해 최신 버전 gdown 재설치
+          python3 -m pip install gdown==5.2.0 --break-system-packages
 
       - name: Create keys file
         run: |
@@ -48,17 +48,15 @@ jobs:
           
           echo "추출된 파일 ID: $FILE_ID"
           
-          # 파이썬 스크립트로 대용량 파일 다운로드 (바이러스 경고 우회)
-          cat << 'EOF' > download.py
-          import sys
-          from google_drive_downloader import GoogleDriveDownloader as gdd
-          file_id = sys.argv[1]
-          gdd.download_file_from_google_drive(file_id=file_id, dest_path='./game.xci', overwrite=True)
-          EOF
-          
-          python3 download.py "$FILE_ID"
+          # 최신 버전 gdown으로 직접 ID 다운로드 실행
+          python3 -m gdown --id "$FILE_ID" -O ./game.xci
 
           # 가짜 HTML(다운로드 차단) 방지: 다운로드된 파일이 100MB 이하인지 검사
+          if [ ! -f "game.xci" ]; then
+             echo "❌ 다운로드 실패: game.xci 파일이 생성되지 않았습니다."
+             exit 1
+          fi
+
           FILE_SIZE=$(stat -f%z game.xci)
           if [ "$FILE_SIZE" -lt 100000000 ]; then
             echo "❌ 오류: 다운로드된 파일이 너무 작습니다 ($FILE_SIZE bytes)."
