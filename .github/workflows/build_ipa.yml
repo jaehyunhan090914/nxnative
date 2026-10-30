@@ -4,13 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       game_url:
-        description: 'Direct download URL or Google Drive URL for NSP/XCI/NSZ game file'
+        description: 'NSP/XCI Direct URL (GoFile 등 직링크 권장, 구글 드라이브는 막힐 수 있음)'
         required: true
 
 jobs:
   build:
     runs-on: macos-latest
     steps:
+      - name: Free up disk space (Critical for nxnative)
+        run: |
+          echo "nxnative 빌드 요구사항(게임용량x2 + 10GB)을 위해 여유 공간을 강제 확보합니다..."
+          sudo rm -rf /Applications/Xcode_14*.app
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/*
+          df -h
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -29,23 +36,24 @@ jobs:
       - name: Download Game File
         run: |
           mkdir -p ~/Games/MyGame
-          FILE_ID=$(echo "${{ github.event.inputs.game_url }}" | sed -n 's/.*id=\([^&]*\).*/\1/p')
-          if [ -z "$FILE_ID" ]; then
-            FILE_ID=$(echo "${{ github.event.inputs.game_url }}" | sed -n 's/.*\/d\/\([^\/]*\).*/\1/p')
+          cd ~/Games/MyGame
+          
+          # 구글 드라이브 링크면 gdown, 일반 링크면 curl 사용
+          if [[ "${{ github.event.inputs.game_url }}" == *"drive.google.com"* ]]; then
+            python3 -m gdown "${{ github.event.inputs.game_url }}" --fuzzy
+          else
+            curl -L -O "${{ github.event.inputs.game_url }}"
           fi
           
-          if [ -n "$FILE_ID" ]; then
-            echo "Downloading Google Drive file ID: $FILE_ID"
-            curl -c /tmp/cookies "https://drive.google.com/uc?export=download&id=${FILE_ID}" > /tmp/confirm.html
-            CONFIRM=$(grep -o 'confirm=[^&"]*' /tmp/confirm.html | head -n 1)
-            if [ -n "$CONFIRM" ]; then
-              curl -Lb /tmp/cookies "https://drive.google.com/uc?export=download&${CONFIRM}&id=${FILE_ID}" -o ~/Games/MyGame/game.nsp
-            else
-              python3 -m gdown --id "$FILE_ID" -O ~/Games/MyGame/game.nsp --fuzzy || curl -L "${{ github.event.inputs.game_url }}" -o ~/Games/MyGame/game.nsp
-            fi
-          else
-            curl -L "${{ github.event.inputs.game_url }}" -o ~/Games/MyGame/game.nsp
+          # 가짜 HTML(다운로드 차단) 방지: 다운로드된 파일이 100MB 이하인지 검사
+          FILE_SIZE=$(stat -f%z * | head -n 1)
+          if [ "$FILE_SIZE" -lt 100000000 ]; then
+            echo "❌ 오류: 다운로드된 파일이 너무 작습니다 ($FILE_SIZE bytes)."
+            echo "구글 드라이브가 GitHub 서버의 다운로드를 차단하고 가짜 HTML을 보냈습니다."
+            echo "해결책: 게임 파일을 GoFile(gofile.io) 등에 업로드하고 그 직링크를 사용하세요."
+            exit 1
           fi
+          echo "✅ 게임 다운로드 성공! 실제 파일 크기: $FILE_SIZE bytes"
 
       - name: Build IPA
         run: |
