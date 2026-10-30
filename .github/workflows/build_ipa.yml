@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       game_url:
-        description: 'NSP/XCI Direct URL (GoFile 등 직링크 권장, 구글 드라이브는 막힐 수 있음)'
+        description: 'Google Drive URL for NSP/XCI game file'
         required: true
 
 jobs:
@@ -26,7 +26,9 @@ jobs:
           xcodebuild -downloadComponent MetalToolchain || true
           brew install xcodegen zstd glslang
           brew install --cask dotnet-sdk
-          python3 -m pip install lz4 "capstone>=5,<6" fonttools nsz zbic "backports.zstd; python_version < '3.14'" gdown --break-system-packages
+          python3 -m pip install lz4 "capstone>=5,<6" fonttools nsz zbic "backports.zstd; python_version < '3.14'" --break-system-packages
+          # gdown 대신 gdrive-downloader 라이브러리 사용
+          python3 -m pip install gdrive-downloader --break-system-packages
 
       - name: Create keys file
         run: |
@@ -38,19 +40,29 @@ jobs:
           mkdir -p ~/Games/MyGame
           cd ~/Games/MyGame
           
-          # 구글 드라이브 링크면 gdown, 일반 링크면 curl 사용
-          if [[ "${{ github.event.inputs.game_url }}" == *"drive.google.com"* ]]; then
-            python3 -m gdown "${{ github.event.inputs.game_url }}" --fuzzy
-          else
-            curl -L -O "${{ github.event.inputs.game_url }}"
+          # 구글 드라이브 ID 추출
+          FILE_ID=$(echo "${{ github.event.inputs.game_url }}" | sed -n 's/.*id=\([^&]*\).*/\1/p')
+          if [ -z "$FILE_ID" ]; then
+            FILE_ID=$(echo "${{ github.event.inputs.game_url }}" | sed -n 's/.*\/d\/\([^\/]*\).*/\1/p')
           fi
           
+          echo "추출된 파일 ID: $FILE_ID"
+          
+          # 파이썬 스크립트로 대용량 파일 다운로드 (바이러스 경고 우회)
+          cat << 'EOF' > download.py
+          import sys
+          from google_drive_downloader import GoogleDriveDownloader as gdd
+          file_id = sys.argv[1]
+          gdd.download_file_from_google_drive(file_id=file_id, dest_path='./game.xci', overwrite=True)
+          EOF
+          
+          python3 download.py "$FILE_ID"
+
           # 가짜 HTML(다운로드 차단) 방지: 다운로드된 파일이 100MB 이하인지 검사
-          FILE_SIZE=$(stat -f%z * | head -n 1)
+          FILE_SIZE=$(stat -f%z game.xci)
           if [ "$FILE_SIZE" -lt 100000000 ]; then
             echo "❌ 오류: 다운로드된 파일이 너무 작습니다 ($FILE_SIZE bytes)."
-            echo "구글 드라이브가 GitHub 서버의 다운로드를 차단하고 가짜 HTML을 보냈습니다."
-            echo "해결책: 게임 파일을 GoFile(gofile.io) 등에 업로드하고 그 직링크를 사용하세요."
+            echo "구글 드라이브가 다운로드 한도를 차단했거나 파일이 텍스트입니다."
             exit 1
           fi
           echo "✅ 게임 다운로드 성공! 실제 파일 크기: $FILE_SIZE bytes"
