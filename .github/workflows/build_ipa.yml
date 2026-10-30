@@ -29,7 +29,23 @@ jobs:
       - name: Download Game File
         run: |
           mkdir -p ~/Games/MyGame
-          python3 -m gdown "${{ github.event.inputs.game_url }}" -O ~/Games/MyGame/game.nsp --fuzzy || curl -L "${{ github.event.inputs.game_url }}" -o ~/Games/MyGame/game.nsp
+          FILE_ID=$(echo "${{ github.event.inputs.game_url }}" | sed -n 's/.*id=\([^&]*\).*/\1/p')
+          if [ -z "$FILE_ID" ]; then
+            FILE_ID=$(echo "${{ github.event.inputs.game_url }}" | sed -n 's/.*\/d\/\([^\/]*\).*/\1/p')
+          fi
+          
+          if [ -n "$FILE_ID" ]; then
+            echo "Downloading Google Drive file ID: $FILE_ID"
+            curl -c /tmp/cookies "https://drive.google.com/uc?export=download&id=${FILE_ID}" > /tmp/confirm.html
+            CONFIRM=$(grep -o 'confirm=[^&"]*' /tmp/confirm.html | head -n 1)
+            if [ -n "$CONFIRM" ]; then
+              curl -Lb /tmp/cookies "https://drive.google.com/uc?export=download&${CONFIRM}&id=${FILE_ID}" -o ~/Games/MyGame/game.nsp
+            else
+              python3 -m gdown --id "$FILE_ID" -O ~/Games/MyGame/game.nsp --fuzzy || curl -L "${{ github.event.inputs.game_url }}" -o ~/Games/MyGame/game.nsp
+            fi
+          else
+            curl -L "${{ github.event.inputs.game_url }}" -o ~/Games/MyGame/game.nsp
+          fi
 
       - name: Build IPA
         run: |
