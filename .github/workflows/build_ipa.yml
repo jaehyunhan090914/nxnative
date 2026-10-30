@@ -1,10 +1,10 @@
-name: Build IPA
+name: Build IPA with nxnative
 
 on:
   workflow_dispatch:
     inputs:
       game_url:
-        description: 'Direct download URL or Google Drive URL for NSP/XCI game file'
+        description: 'Direct download URL or Google Drive URL for NSP/XCI/NSZ game file'
         required: true
 
 jobs:
@@ -16,8 +16,10 @@ jobs:
 
       - name: Setup Mac Environment
         run: |
-          brew install xcodegen zstd spirv-cross glslang
-          python3 -m pip install lz4 capstone fonttools "backports.zstd; python_version < '3.14'" gdown --break-system-packages
+          xcodebuild -downloadComponent MetalToolchain || true
+          brew install xcodegen zstd glslang
+          brew install --cask dotnet-sdk
+          python3 -m pip install lz4 "capstone>=5,<6" fonttools nsz zbic "backports.zstd; python_version < '3.14'" gdown --break-system-packages
 
       - name: Create keys file
         run: |
@@ -31,7 +33,7 @@ jobs:
 
       - name: Build IPA
         run: |
-          python3 scripts/build_ipa_from_nsp.py ~/Games/MyGame -k ~/keys/prod.keys --allow-other-metal
+          python3 scripts/build_ipa_from_nsp.py ~/Games/MyGame -k ~/keys/prod.keys
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
